@@ -5,6 +5,8 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(knitr)
+library(MASS)
+library(caret)
 data <- read_excel("Data/carotene.xlsx")
 summary(data)
 
