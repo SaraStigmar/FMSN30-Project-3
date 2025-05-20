@@ -5,6 +5,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(knitr)
+library(MASS)
 data <- read_excel("Data/carotene.xlsx")
 summary(data)
 
@@ -91,8 +92,7 @@ ggplot(betaplasma_long, aes(x = betaplasma, y = Proportion, fill = variable)) +
 data |> summarise(mu = mean(betaplasma),
                    s2 = var(betaplasma))
 
-#MODELS
-
+#Some model testing
 #Only main terms, without calories - refer to project 1 and 2. 
 model <- glm(betaplasma ~ bmi + age + fat + cholesterol + fiber + 
                alcohol + betadiet + smokstat + sex + vituse, family = "poisson", data = data)
@@ -141,3 +141,251 @@ ggplot(data_pred, aes(bmi, betaplasma, color = sex)) +
        caption = "95% confidence interval",
        color = "program") +
   facet_wrap(~ sex)
+
+
+
+#MODELS (OBS all excl calories)
+###############################################################################
+
+#Model 1. Null Model
+Model_1 <- glm(betaplasma ~ 1, family = "poisson", data = data)
+
+#Model 2. Full model = Main terms (10) + interaction (66), total 76 variables (+ 1 if coeffiecients bcz of intercept)
+Model_2 <- glm(betaplasma ~ (bmi + age + fat + cholesterol + fiber + 
+                                 alcohol + betadiet + smokstat + sex + vituse)^2,
+               family = "poisson", data = data)
+
+#Model 3. Backward Elimination, start from the full model 
+Model_3 <- step(Model_2,
+                      direction = "backward",
+                      scope = list(lower = formula(Model_1),
+                      upper = formula(Model_2)),
+                      k = log(nobs(Model_1)))
+
+log(nrow(data)) == log(nobs(Model_1))
+
+#Model 4. Forward Selection, start from the null model 
+Model_4 <- step(Model_1,
+                direction = "forward",
+                scope = list(lower = formula(Model_1),
+                             upper = formula(Model_2)),
+                k = log(nobs(Model_1)))
+
+#Model 5. Stepwise regression from model 3
+Model_5 <- step(Model_3,
+                direction = "both",
+                scope = list(lower = formula(Model_1),
+                upper = formula(Model_2)),
+                k = log(nobs(Model_3)))
+
+#Model 6. Stepwise regression from model 4
+Model_6 <- step(Model_4,
+                direction = "both",
+                scope = list(lower = formula(Model_1),
+                upper = formula(Model_2)),
+                k = log(nobs(Model_4)))
+
+############ OBS KODTEST #######################################################
+#Här testade jag så jag använder selektionsmetoderna rätt genom att switcha till
+#negativ bionomial fördelning och jag får då små modeller. 
+model_test <- glm.nb(betaplasma ~ (bmi + age + fat + cholesterol + fiber + 
+                                     alcohol + betadiet + smokstat + sex + vituse)^2,
+                     data = data)
+model_test_null <- glm.nb(betaplasma ~ 1,
+                          data = data)
+model_test_backward <- step(model_test,
+                direction = "backward",
+                scope = list(lower = formula(model_test_null),
+                             upper = formula(model_test)),
+                k = log(nobs(model_test_null)),
+                trace = 1)
+################################################################################
+
+
+
+#See if we can reduce vituse - the categorical variable, into two categories:
+#------------------------------------------------------------------------------
+
+# Transform three levels to two, but assigning vituse category "Never" into "Never" 
+# and if the category is not "Never" it's assigned into "Used". 
+new_data <- data
+new_data$vituseReduced <- ifelse(new_data$vituse == "Never", "Never", "Used")
+new_data$vituseReduced <- factor(new_data$vituseReduced)
+#Then we create a new model, based on this two-factor collapsed version (reduced):
+Model_5_Reduced <- glm(betaplasma ~ bmi + age + fat + cholesterol + fiber + alcohol + 
+                                       betadiet + smokstat + sex + vituseReduced + bmi:fat + bmi:cholesterol + 
+                                       bmi:fiber + bmi:alcohol + bmi:betadiet + bmi:smokstat + bmi:sex + 
+                                       bmi:vituseReduced + age:fat + age:cholesterol + age:fiber + age:betadiet + 
+                                       age:smokstat + age:vituseReduced + fat:cholesterol + fat:alcohol + 
+                                       fat:betadiet + fat:smokstat + fat:sex + fat:vituseReduced + cholesterol:fiber + 
+                                       cholesterol:alcohol + cholesterol:betadiet + cholesterol:smokstat + 
+                                       fiber:alcohol + fiber:betadiet + fiber:smokstat + fiber:sex + 
+                                       fiber:vituseReduced + alcohol:betadiet + alcohol:smokstat + alcohol:sex + 
+                                       alcohol:vituseReduced + betadiet:vituseReduced + smokstat:sex + smokstat:vituseReduced + 
+                                       sex:vituseReduced,
+                        family = "poisson", data = new_data)
+#Save variables
+sum_1 <- summary(Model_5)
+sum_2 <- summary(Model_5_Reduced)
+deviance_1 <- sum_1$deviance
+deviance_2 <- sum_2$deviance
+df_1 <- sum_1$df.residual
+df_2 <- sum_2$df.residual
+
+#Calculate differences
+D_diff <- deviance_2 - deviance_1
+df_diff <- df_2 - df_1
+chi2_alpha <- qchisq(p = 1 - 0.05, df = df_diff)
+Pvalue <- pchisq(q = D_diff, df = df_diff, lower.tail = FALSE)
+
+#I create a table and remove the vertical title using rownames, just to clean it up! 
+table_1e <- cbind(D_diff, df_diff, chi2_alpha, Pvalue)
+rownames(table_1e) <- c(" ")
+table_1e
+
+# 1. Name of test: Partial likelihood ratio test 
+# 2. Null Hypothesis, H_0: Beta_often = Beta_Rarely. In words, that the model with 
+#    one dummy variable Beta_Used is enough. 
+# 3. The value of the test statistic is D = 2543.28
+# 4. The distribution is Chi-squared
+# 5. The P-value is P = 0
+# 6. The conclusion is to with great certainty reject H_0 since D_diff >> Chi2_alpha, 
+# and since Pvalue < 0.05.
+
+#CONCLUSION: Keep the original model_5 and throw away model_5_reduced. 
+
+
+
+#BIC AND AIC 
+df1 <- data.frame(variable = names(Model_1$coefficients),
+                  b_model1 = Model_1$coefficients, row.names = NULL)
+df2 <- data.frame(variable = names(Model_2$coefficients),
+                  b_model2 = Model_2$coefficients, row.names = NULL)
+df3 <- data.frame(variable = names(Model_3$coefficients),
+                  b_model3 = Model_3$coefficients, row.names = NULL)
+df4 <- data.frame(variable = names(Model_4$coefficients),
+                  b_model4 = Model_4$coefficients, row.names = NULL)
+df5 <- data.frame(variable = names(Model_5$coefficients),
+                  b_model5 = Model_5$coefficients, row.names = NULL)
+df6 <- data.frame(variable = names(Model_6$coefficients),
+                  b_model6 = Model_6$coefficients, row.names = NULL)
+All_Models <- full_join(df1, df2) |> full_join(df3) |> full_join(df4) |> full_join(df5) |> full_join(df6)
+
+#Writes a table:
+table_3b <- kable(All_Models, caption = "Table 3(b): Estimated β-parameters in each of the six models")
+table_3b
+#Exported to excel:
+#write.csv(All_Models, "Table_3b_ny.csv", row.names = FALSE)
+
+# Calculate McFadden’s adjusted pseudo R2, AIC and BIC for all models from Table.3(b), 
+# and indicate which model is best, according to each of these criteria.
+
+aic <- AIC(Model_1, Model_2, Model_3, Model_4, Model_5, Model_6)
+bic <- BIC(Model_1, Model_2, Model_3, Model_4, Model_5, Model_6)
+
+#Create dataframe for the AIC- and BIC
+collect.AICetc <- data.frame(aic, bic)
+
+#Remove unnecessary df.1 column
+collect.AICetc |> mutate(df.1 = NULL) -> collect.AICetc
+
+#Calculate Psuedo R
+collect.AICetc |> mutate(
+  loglik =  c(logLik(Model_1)[1],
+              logLik(Model_2)[1],
+              logLik(Model_3)[1],
+              logLik(Model_4)[1],
+              logLik(Model_5)[1],
+              logLik(Model_6)[1])) -> collect.AICetc
+
+#Calculate McFadden's adjusted psuedo R2
+
+#Save loglikelihood for null model:
+lnL0 <- logLik(Model_1)[1]
+
+collect.AICetc |> mutate(
+  R2McF = 1 - loglik/lnL0,
+  R2McF.adj = 1 - (loglik - (df - 1)/2)/lnL0) -> collect.AICetc
+
+#Show result
+collect.AICetc
+
+#Model with best AIC: Model_4 (Forward Selection)
+#Model with best BIC: Either Model_3, 4 or 5 - they appear the same
+
+
+
+
+
+
+
+
+
+
+
+
+# 3(d). ------------------------------------------------------------------------
+# Calculate the standardized deviance residuals for the model with the best AIC 
+# and the model with the best BIC, from 3(c). 
+
+
+
+# Model with the best (lowest) AIC: Stepwise_From_Backward (AIC = 298.1199)
+# Model with the best (lowest) BIC: Stepwise_From_Forward_Reduced (BIC = 322.5014)
+
+# Standardized residuals for respective model 
+res_Stepwise_From_Backward <- rstandard(Stepwise_From_Backward, type = "deviance")
+res_Stepwise_From_Forward_Reduced <- rstandard(Stepwise_From_Forward_Reduced, type = "deviance")
+
+lp_Stepwise_From_Backward <- predict(Stepwise_From_Backward, type = "link")
+lp_Stepwise_From_Forward_Reduced <- predict(Stepwise_From_Forward_Reduced, type = "link")
+
+
+# Task:
+# Plot the standardized deviance residuals, with suitable reference lines, 
+# against the linear predictors for each of the two models. Also make QQ-plots 
+# for the residuals. Discuss which of the models has the best behaved residuals
+
+
+#UPDATED: Second try for plot 1 in order to get color-coded 
+
+#Plot 1:
+Model_5_infl <- influence(Stepwise_From_Backward)
+Model_6_infl <- influence(Stepwise_From_Forward_Reduced)
+
+data_pred <- cbind(data,
+                   xbeta5 = predict(Stepwise_From_Backward),
+                   xbeta6 = predict(Stepwise_From_Forward_Reduced),
+                   v5 = Model_5_infl$hat,
+                   v6 = Model_6_infl$hat)
+
+
+data_pred |> mutate(devresid5 = Model_5_infl$dev.res,
+                    stddevresid5 = devresid5/sqrt(1 - v5)) -> data_pred
+data_pred |> mutate(devresid6 = Model_6_infl$dev.res,
+                    stddevresid6 = devresid6/sqrt(1 - v6)) -> data_pred
+
+ggplot(data_pred, aes(x = xbeta5, 
+                      y = stddevresid5, 
+                      color = as.factor(lowplasma_01))) +
+  geom_point() +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"),
+             linewidth = 1) +
+  labs(title = "Standardised deviance residuals vs linear predictor",
+       x = "Linear predictor, xb", y = "Standardized deviance residuals, devstd",
+       color = "Y")
+
+ggplot(data_pred, aes(x = xbeta6, 
+                      y = stddevresid6, 
+                      color = as.factor(lowplasma_01))) +
+  geom_point() +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"),
+             linewidth = 1) +
+  labs(title = "Standardised deviance residuals vs linear predictor",
+       x = "Linear predictor, xb", y = "Standardized deviance residuals, devstd",
+       color = "Y")
+
+
+
