@@ -92,8 +92,8 @@ ggplot(betaplasma_long, aes(x = betaplasma, y = Proportion, fill = variable)) +
 data |> summarise(mu = mean(betaplasma),
                    s2 = var(betaplasma))
 
-#Some model testing
-#Only main terms, without calories - refer to project 1 and 2. 
+#Model testing
+  #-> Only main terms, without calories - refer to project 1 and 2. 
 model <- glm(betaplasma ~ bmi + age + fat + cholesterol + fiber + 
                alcohol + betadiet + smokstat + sex + vituse, family = "poisson", data = data)
 summary(model)
@@ -141,6 +141,8 @@ ggplot(data_pred, aes(bmi, betaplasma, color = sex)) +
        caption = "95% confidence interval",
        color = "program") +
   facet_wrap(~ sex)
+
+
 
 
 
@@ -311,7 +313,59 @@ collect.AICetc |> mutate(
 collect.AICetc
 
 #Model with best AIC: Model_4 (Forward Selection)
-#Model with best BIC: Either Model_3, 4 or 5 - they appear the same
+#Model with best BIC: Either Model_3, 5 or 6 - they appear the same
+
+
+# Leverage 
+data_pred |> mutate(v_3 = hatvalues(Model_3)) -> data_pred
+data_pred |> mutate(v_4 = hatvalues(Model_4)) -> data_pred
+
+#Standardized deviance residuals
+data_infl_3 <- influence(Model_3)
+data_infl_4 <- influence(Model_4)
+#These gives deviance and pearson residuals!
+#Extract deviance residuals and standardize 
+data_pred |> mutate(devres_3 = data_infl_3$dev.res,
+                     std.devres_3 = devres_3/sqrt(1 - v_3),
+                    devres_4 = data_infl_4$dev.res,
+                    std.devres_4 = devres_4/sqrt(1 - v_4)) -> data_pred
+
+#Cooks D
+data_pred |> mutate(D_3 = cooks.distance(Model_3)) -> data_pred
+data_pred |> mutate(D_4 = cooks.distance(Model_4)) -> data_pred
+
+
+
+
+# Standardiserade residualer mot förväntat värde, dvs µ^hat
+
+ggplot(data_pred, aes(x = fitted(Model_3), y = std.devres_3)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "Expected values", y = "Standardized deviance-residuals",
+       title = "Residuals plot – Model 3")
+
+ggplot(data_pred, aes(x = fitted(Model_4), y = std.devres_4)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "Expected values", y = "Standardized deviance-residuals",
+       title = "Residuals plot – Model 4")
+
+# Leverage mot standardiserade residualer, färg enligt cooks D
+
+ggplot(data_pred, aes(x = v_3, y = std.devres_3, color = D_3)) +
+  geom_point(alpha = 0.6) +
+  scale_size_continuous(name = "Cook’s D") +
+  labs(x = "Leverage", y = "Standardized deviance-residuals",
+       title = "Influence plot – Model 3") +
+  theme_minimal()
+
+#Cooks D
+
+ggplot(data_pred, aes(x = 1:nrow(data_pred), y = D_3)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Observation", y = "Cook’s D", title = "Cook’s D – Modell 3") +
+  geom_hline(yintercept = 4/nrow(data_pred), linetype = "dotted", color = "red")
 
 
 
@@ -324,21 +378,41 @@ collect.AICetc
 
 
 
-# 3(d). ------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#------------------------------------------------------------------------------
 # Calculate the standardized deviance residuals for the model with the best AIC 
 # and the model with the best BIC, from 3(c). 
 
 
 
-# Model with the best (lowest) AIC: Stepwise_From_Backward (AIC = 298.1199)
-# Model with the best (lowest) BIC: Stepwise_From_Forward_Reduced (BIC = 322.5014)
+
 
 # Standardized residuals for respective model 
-res_Stepwise_From_Backward <- rstandard(Stepwise_From_Backward, type = "deviance")
-res_Stepwise_From_Forward_Reduced <- rstandard(Stepwise_From_Forward_Reduced, type = "deviance")
+res_Model_3 <- rstandard(Model_3, type = "deviance")
+res_Model_4 <- rstandard(Model_4, type = "deviance")
 
-lp_Stepwise_From_Backward <- predict(Stepwise_From_Backward, type = "link")
-lp_Stepwise_From_Forward_Reduced <- predict(Stepwise_From_Forward_Reduced, type = "link")
+#Linear predictor
+lp_Model_3 <- predict(Model_3, type = "link")
+lp_Model_4 <- predict(Model_4, type = "link")
+
+
 
 
 # Task:
