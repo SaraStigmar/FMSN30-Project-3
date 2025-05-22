@@ -91,6 +91,11 @@ ggplot(betaplasma_long, aes(x = betaplasma, y = Proportion, fill = variable)) +
 #Mean and variance by program
 data |> summarise(mu = mean(betaplasma),
                    s2 = var(betaplasma))
+  # RESULT: mu = 190, s^2 = 33478
+  # NOTICE: Mu is far from the variance, which indicates Poisson is a poor fit. 
+  # This is called OVERDISPERSION - that the variance of our data is much greater
+  # than the variance of the distribution - THIS is what causes the poor fit. 
+  # Since Poisson requires E(Y) = mu, Var(Y) = Mu, 
 
 #Model testing
   #-> Only main terms, without calories - refer to project 1 and 2. 
@@ -105,6 +110,8 @@ ci_beta = confint(model)
 ci_RR = exp(ci_beta)
 
 cbind(beta = beta, ci_beta, RR = RR, ci_RR) |> round(digits = 2)
+  #NOTICE: The betas have almost no relevance
+
 
 #Estimated mean with c.i.
 data_pred <- cbind(
@@ -201,6 +208,17 @@ model_test_backward <- step(model_test,
                              upper = formula(model_test)),
                 k = log(nobs(model_test_null)),
                 trace = 1)
+
+#RESULT:
+#Step:  AIC=3818.4
+#betaplasma ~ bmi + cholesterol + betadiet + vituse
+
+# Df Deviance    AIC
+#<none>             335.50 3818.4
+#- cholesterol  1   346.78 3823.9
+#- betadiet     1   354.98 3832.1
+#- vituse       2   360.95 3832.3
+#- bmi          1   363.32 3840.5
 ################################################################################
 
 
@@ -286,34 +304,23 @@ aic <- AIC(Model_1, Model_2, Model_3, Model_4, Model_5, Model_6)
 bic <- BIC(Model_1, Model_2, Model_3, Model_4, Model_5, Model_6)
 
 #Create dataframe for the AIC- and BIC
-collect.AICetc <- data.frame(aic, bic)
+collect.AICetc <- data.frame(aic, bic, D = c(Model_1$deviance, Model_2$deviance, Model_3$deviance, Model_4$deviance, Model_5$deviance, Model_6$deviance)) 
 
 #Remove unnecessary df.1 column
-collect.AICetc |> mutate(df.1 = NULL) -> collect.AICetc
+collect.AICetc |> mutate(df.1 = NULL, D0 = Model_1$deviance,
+                         p = df - 1) -> collect.AICetc
 
-#Calculate Psuedo R
+#Calculate Psuedo R & McFadden's adjusted psuedo R2
 collect.AICetc |> mutate(
-  loglik =  c(logLik(Model_1)[1],
-              logLik(Model_2)[1],
-              logLik(Model_3)[1],
-              logLik(Model_4)[1],
-              logLik(Model_5)[1],
-              logLik(Model_6)[1])) -> collect.AICetc
-
-#Calculate McFadden's adjusted psuedo R2
-
-#Save loglikelihood for null model:
-lnL0 <- logLik(Model_1)[1]
-
-collect.AICetc |> mutate(
-  R2McF = 1 - loglik/lnL0,
-  R2McF.adj = 1 - (loglik - (df - 1)/2)/lnL0) -> collect.AICetc
+  pseudoR2 = 1 - D/D0,
+  pseudoR2adj = 1 - (D + p)/D0) -> collect.AICetc
 
 #Show result
 collect.AICetc
 
-#Model with best AIC: Model_4 (Forward Selection)
-#Model with best BIC: Either Model_3, 5 or 6 - they appear the same
+#Model with best (lowest) AIC: Model_4 (Forward Selection)
+#Model with best (lowest) BIC: Either Model_3, 5 or 6 - they appear the same
+#( Model with best (highest) R^2_adj: Model_2 )
 
 
 # Leverage 
@@ -356,25 +363,65 @@ ggplot(data_pred, aes(x = fitted(Model_4), y = std.devres_4)) +
 ggplot(data_pred, aes(x = v_3, y = std.devres_3, color = D_3)) +
   geom_point(alpha = 0.6) +
   scale_size_continuous(name = "Cook’s D") +
-  labs(x = "Leverage", y = "Standardized deviance-residuals",
+  labs(x = "Leverage", y = "Standardized deviance residuals",
        title = "Influence plot – Model 3") +
   theme_minimal()
+
+ggplot(data_pred, aes(x = v_4, y = std.devres_4, color = D_4)) +
+  geom_point(alpha = 0.6) +
+  scale_size_continuous(name = "Cook’s D") +
+  labs(x = "Leverage", y = "Standardized deviance residuals",
+       title = "Influence plot – Model 4") +
+  theme_minimal()
+
 
 #Cooks D
 
 ggplot(data_pred, aes(x = 1:nrow(data_pred), y = D_3)) +
   geom_bar(stat = "identity") +
-  labs(x = "Observation", y = "Cook’s D", title = "Cook’s D – Modell 3") +
+  labs(x = "Observation", y = "Cook’s D", title = "Cook’s D – Model 3") +
+  geom_hline(yintercept = 4/nrow(data_pred), linetype = "dotted", color = "red")
+
+#Cooks D
+
+ggplot(data_pred, aes(x = 1:nrow(data_pred), y = D_4)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Observation", y = "Cook’s D", title = "Cook’s D – Model 4") +
   geom_hline(yintercept = 4/nrow(data_pred), linetype = "dotted", color = "red")
 
 
+##################################
 
+# HYPOTHESIS TESTING
 
+##################################
 
+D_diff_3 <- Model_3$null.deviance - Model_3$deviance
+D_diff_4 <- Model_4$null.deviance - Model_4$deviance
 
+df_diff_3 <- Model_3$df.null - Model_3$df.residual
+df_diff_4 <- Model_4$df.null - Model_4$df.residual
 
+chi2_alpha_3 <- qchisq(p = 1 - 0.05, df = df_diff_3)
+chi2_alpha_4 <- qchisq(p = 1 - 0.05, df = df_diff_4)
+Pvalue_3 <- pchisq(q = D_diff_3, df = df_diff_3, lower.tail = FALSE)
+Pvalue_4 <- pchisq(q = D_diff_4, df = df_diff_4, lower.tail = FALSE)
 
+#I create a table and remove the vertical title using rownames, just to clean it up! 
+table_3 <- cbind(D_diff_3, df_diff_3, chi2_alpha_3, Pvalue_3)
+table_4 <- cbind(D_diff_4, df_diff_4, chi2_alpha_4, Pvalue_4)
+rownames(table_3) <- c(" ")
+rownames(table_4) <- c(" ")
+table_3
+table_4
 
+#RESULT:
+#> table_3
+#D_diff_3 df_diff_3 chi2_alpha_3 Pvalue_3
+#18505.63        66     85.96491        0
+#> table_4
+#D_diff_4 df_diff_4 chi2_alpha_4 Pvalue_4
+#18530.88        73     93.94534        0
 
 
 
@@ -446,7 +493,7 @@ ggplot(data_pred, aes(x = xbeta5,
   geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
              linetype = c("dotted", "dashed", "solid", "dashed", "dotted"),
              linewidth = 1) +
-  labs(title = "Standardised deviance residuals vs linear predictor",
+  labs(title = "Standardized deviance residuals vs linear predictor",
        x = "Linear predictor, xb", y = "Standardized deviance residuals, devstd",
        color = "Y")
 
@@ -457,7 +504,7 @@ ggplot(data_pred, aes(x = xbeta6,
   geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
              linetype = c("dotted", "dashed", "solid", "dashed", "dotted"),
              linewidth = 1) +
-  labs(title = "Standardised deviance residuals vs linear predictor",
+  labs(title = "Standardized deviance residuals vs linear predictor",
        x = "Linear predictor, xb", y = "Standardized deviance residuals, devstd",
        color = "Y")
 
