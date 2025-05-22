@@ -91,6 +91,11 @@ ggplot(betaplasma_long, aes(x = betaplasma, y = Proportion, fill = variable)) +
 #Mean and variance by program
 data |> summarise(mu = mean(betaplasma),
                    s2 = var(betaplasma))
+  # RESULT: mu = 190, s^2 = 33478
+  # NOTICE: Mu is far from the variance, which indicates Poisson is a poor fit. 
+  # This is called OVERDISPERSION - that the variance of our data is much greater
+  # than the variance of the distribution - THIS is what causes the poor fit. 
+  # Since Poisson requires E(Y) = mu, Var(Y) = Mu, 
 
 #Model testing
   #-> Only main terms, without calories - refer to project 1 and 2. 
@@ -105,6 +110,8 @@ ci_beta = confint(model)
 ci_RR = exp(ci_beta)
 
 cbind(beta = beta, ci_beta, RR = RR, ci_RR) |> round(digits = 2)
+  #NOTICE: The betas have almost no relevance
+
 
 #Estimated mean with c.i.
 data_pred <- cbind(
@@ -360,6 +367,14 @@ ggplot(data_pred, aes(x = v_3, y = std.devres_3, color = D_3)) +
        title = "Influence plot – Model 3") +
   theme_minimal()
 
+ggplot(data_pred, aes(x = v_4, y = std.devres_4, color = D_4)) +
+  geom_point(alpha = 0.6) +
+  scale_size_continuous(name = "Cook’s D") +
+  labs(x = "Leverage", y = "Standardized deviance residuals",
+       title = "Influence plot – Model 4") +
+  theme_minimal()
+
+
 #Cooks D
 
 ggplot(data_pred, aes(x = 1:nrow(data_pred), y = D_3)) +
@@ -367,7 +382,12 @@ ggplot(data_pred, aes(x = 1:nrow(data_pred), y = D_3)) +
   labs(x = "Observation", y = "Cook’s D", title = "Cook’s D – Model 3") +
   geom_hline(yintercept = 4/nrow(data_pred), linetype = "dotted", color = "red")
 
+#Cooks D
 
+ggplot(data_pred, aes(x = 1:nrow(data_pred), y = D_4)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Observation", y = "Cook’s D", title = "Cook’s D – Model 4") +
+  geom_hline(yintercept = 4/nrow(data_pred), linetype = "dotted", color = "red")
 
 
 ##################################
