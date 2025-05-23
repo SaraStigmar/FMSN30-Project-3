@@ -1,4 +1,5 @@
 source("Code/Base.R")
+source("Code/Functions/boot_negbin.R")
 library(ggeffects)
 
 # Select only numeric columns
@@ -94,8 +95,10 @@ ggplot(data, aes(x = bmi, y = betaplasma, color = vituse)) +
 
 #Selection
 Fullscope_Model <- glm.nb(betaplasma ~ (bmi + age + fat + cholesterol + fiber + 
-                                        alcohol + betadiet + smokstat + sex + vituse)^2,data = data)
-
+                                        alcohol + betadiet + smokstat + sex + vituse)^2,data = data, control = glm.control(maxit=10000))
+Fullscope_Model <- glm.nb(betaplasma ~ bmi + age + fat + cholesterol + fiber + 
+                                          alcohol + betadiet + smokstat + sex + vituse,data = data, control = glm.control(maxit=1000))
+summary(Fullscope_Model)
 vars <- c("bmi", "age", "fat", "cholesterol", "fiber", 
           "alcohol", "betadiet", "smokstat", "sex", "vituse")
 
@@ -137,6 +140,36 @@ summary(forward_model)
 summary(backward_model)
 summary(stepwise_model_n)
 summary(stepwise_model_f)
+
+step_model <- glm.nb(betaplasma ~(bmi + cholesterol + betadiet + vituse)^2, data = data)
+
+forward_model <- step(nullmodel,
+                      scope = list(lower = ~1, upper = formula(step_model)),
+                      direction = "forward",
+                      trace = TRUE,
+                      k = log(n))  # BIC instead of AIC
+
+backward_model <- step(step_model,
+                       scope = list(lower = ~1, upper = formula(step_model)),
+                       direction = "backward",
+                       trace = TRUE,
+                       k = log(n))  # BIC
+
+stepwise_model_n <- step(nullmodel,
+                         scope = list(lower = ~1, upper = formula(step_model)),
+                         direction = "both",
+                         trace = TRUE,
+                         k = log(n))  # BIC
+
+stepwise_model_f <- step(step_model,
+                         scope = list(lower = ~1, upper = formula(step_model)),
+                         direction = "both",
+                         trace = TRUE,
+                         k = log(n)) 
+
+
+
+#All of them result in the same
 
 #All the same
 new_data <- data
@@ -262,4 +295,58 @@ D_diff <- D_pois - D_nb
 D_diff
 
 qchisq(1 - 0.05, 1)
-pchisq(D_diff, 1, lower.tail = FALSE)
+pchisq(D_diff, 1, lower.tail = FALSE) #P-value 0
+
+
+#Prediction intervals for just BMI
+
+
+
+bmi_seq <- seq(min(new_data$bmi), max(new_data$bmi), length.out = 100)
+
+pred_grid <- expand.grid(
+  bmi = bmi_seq,
+  cholesterol = median(new_data$cholesterol, na.rm = TRUE),
+  betadiet = median(new_data$betadiet, na.rm = TRUE),
+  vituse_reduced = levels(new_data$vituse_reduced)
+)
+
+boot_results <- boot.nb(
+  model = model_reduced,
+  odata = new_data,
+  newdata = pred_grid,
+  N = 1000,           # Adjust for speed vs accuracy
+  p = 0.95
+)
+
+pred_grid$pred <- boot_results$pred
+pred_grid$lower <- boot_results$lower
+pred_grid$upper <- boot_results$upper
+
+
+ggplot(pred_grid, aes(x = bmi, color = vituse_reduced)) +
+  geom_line(aes(y = pred)) +
+  geom_line(aes(y = lower), linetype = "dashed") +
+  geom_line(aes(y = upper), linetype = "dashed") +
+  facet_wrap(~ vituse_reduced) +
+  labs(y = "Predicted betaplasma", title = "Bootstrap Prediction Intervals")
+
+
+# Combine original data with model predictions (mean fit)
+new_data$fit <- predict(model_reduced, type = "response")
+# Calculate confidence intervals for the mean prediction
+link <- predict(model_reduced, type = "link", se.fit = TRUE)
+critval <- qnorm(0.975)
+new_data$mu.lwr <- model_reduced$family$linkinv(link$fit - critval * link$se.fit)
+new_data$mu.upr <- model_reduced$family$linkinv(link$fit + critval * link$se.fit)
+
+
+
+# Compute confidence intervals for the mean prediction
+link <- predict(model_reduced, type = "link", se.fit = TRUE)
+critval <- qnorm(0.975)
+new_data$mu.lwr <- model_reduced$family$linkinv(link$fit - critval * link$se.fit)
+new_data$mu.upr <- model_reduced$family$linkinv(link$fit + critval * link$se.fit)
+
+
+
