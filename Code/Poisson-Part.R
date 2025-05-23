@@ -69,8 +69,10 @@ ggplot(betaplasma_table) +
            width = 0.4) +
   geom_col(aes(x = betaplasma - 0.2, y = expected, fill = "Expected"), 
            width = 0.4) +
+  xlim(0, 500) +
   labs(y = "Probability", x = "units (levels) of betaplasma", fill = "",
-       title = "Distribution of betaplasma levels: Poisson?") 
+       title = "Distribution of betaplasma levels vs Poisson Distribution") 
+#OBS! Ta bort raden xlim(0, 500) om du vill se den faktiska fördelningen - vi har en lång svans upp till över 1000 pga höga betaplasma värden 
 
 ##############################################################################
 #Alternative way?
@@ -193,6 +195,13 @@ Model_6 <- step(Model_4,
                 scope = list(lower = formula(Model_1),
                 upper = formula(Model_2)),
                 k = log(nobs(Model_4)))
+
+summary(Model_1)
+summary(Model_2)
+summary(Model_3)
+summary(Model_4)
+summary(Model_5)
+summary(Model_6)
 
 ############ OBS KODTEST #######################################################
 #Här testade jag så jag använder selektionsmetoderna rätt genom att switcha till
@@ -348,13 +357,21 @@ data_pred |> mutate(D_4 = cooks.distance(Model_4)) -> data_pred
 
 ggplot(data_pred, aes(x = fitted(Model_3), y = std.devres_3)) +
   geom_point() +
-  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = -2, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 3, linetype = "dashed", color = "blue") +
+  geom_hline(yintercept = -3, linetype = "dashed", color = "blue") +
   labs(x = "Expected values", y = "Standardized deviance-residuals",
        title = "Residuals plot – Model 3")
 
 ggplot(data_pred, aes(x = fitted(Model_4), y = std.devres_4)) +
   geom_point() +
-  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = -2, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 3, linetype = "dashed", color = "blue") +
+  geom_hline(yintercept = -3, linetype = "dashed", color = "blue") +
   labs(x = "Expected values", y = "Standardized deviance-residuals",
        title = "Residuals plot – Model 4")
 
