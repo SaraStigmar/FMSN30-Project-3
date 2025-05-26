@@ -25,17 +25,38 @@ cbind(RR = exp(beta), exp(ci_beta)) |> round(digits=2)
 
 
 #estimate means
+# Add predicted values with standard errors
 betaplasma_bmi_pred <- cbind(
   data,
-  xb = predict(betaplasma_glmnb_bmi, se.fit = TRUE))
-betaplasma_bmi_pred |> mutate(
+  xb = predict(betaplasma_glmnb_bmi, se.fit = TRUE)
+)
+
+# Add confidence intervals and fitted means
+betaplasma_bmi_pred <- betaplasma_bmi_pred |> mutate(
   xb.residual.scale = NULL,
-  xb.lwr = xb.fit - 1.96*xb.se.fit,
-  xb.upr = xb.fit + 1.96*xb.se.fit,
+  xb.lwr = xb.fit - 1.96 * xb.se.fit,
+  xb.upr = xb.fit + 1.96 * xb.se.fit,
   muhat = exp(xb.fit),
   mu.lwr = exp(xb.lwr),
   mu.upr = exp(xb.upr)
-) -> betaplasma_bmi_pred
+)
+
+# Extract influence measures and hat values
+bmi_infl <- influence(betaplasma_glmnb_bmi)
+v <- hatvalues(betaplasma_glmnb_bmi)
+
+# Calculate deviance and Pearson residuals
+devres <- bmi_infl$dev.res
+pearson_res <- residuals(betaplasma_glmnb_bmi, type = "pearson")
+
+# Add residuals and standardized residuals to dataframe
+betaplasma_bmi_pred <- betaplasma_bmi_pred |> mutate(
+  v = v,
+  devres = devres,
+  std.devres = devres / sqrt(1 - v),
+  pearsonres = pearson_res,
+  std.pearsonres = pearson_res / sqrt(1 - v)
+)
 
 ggplot(betaplasma_bmi_pred, aes(bmi, betaplasma)) +
   geom_point() +
@@ -48,6 +69,28 @@ betaplasma_null$null.deviance
 betaplasma_glmnb_bmi$null.deviance
 
 anova(betaplasma_null,betaplasma_glmnb_bmi) #better than null
+
+
+#Residuals:
+#Standard deviance
+ggplot(betaplasma_bmi_pred, aes(x = xb.fit)) +
+  geom_point(aes(y = std.devres), size = 2) +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"), 
+             linewidth = 1) +
+  expand_limits(y = c(-4.5, 7.5)) +
+  labs(y = "std dev.res", x = "xb",
+       title = "Betaplasma - BMI: Negbin model (Std Dev Residuals)")
+
+# Plot using standardized Pearson residuals
+ggplot(betaplasma_bmi_pred, aes(x = xb.fit)) +
+  geom_point(aes(y = std.pearsonres), size = 2) +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"), 
+             linewidth = 1) +
+  expand_limits(y = c(-4.5, 7.5)) +
+  labs(y = "std Pearson res.", x = "xb",
+       title = "Betaplasma - BMI: Negbin model (Std Pearson Residuals)")
 
 #Full model without calories
 fullmodel <- glm.nb(betaplasma ~ bmi + age + fat + cholesterol + fiber + 
@@ -80,6 +123,46 @@ ggplot(fullmodel_pred, aes(bmi,betaplasma, color = vituse)) +
   facet_wrap(~ vituse)
 
 
+# Extract influence measures and hat values
+full_infl <- influence(fullmodel)
+v <- hatvalues(fullmodel)
+
+# Calculate deviance and Pearson residuals
+devres <- full_infl$dev.res
+pearson_res <- residuals(fullmodel, type = "pearson")
+
+# Add residuals and standardized residuals to dataframe
+fullmodel_pred <- fullmodel_pred |> mutate(
+  v = v,
+  devres = devres,
+  std.devres = devres / sqrt(1 - v),
+  pearsonres = pearson_res,
+  std.pearsonres = pearson_res / sqrt(1 - v)
+)
+
+
+#Residuals:
+#Standard deviance
+ggplot(fullmodel_pred, aes(x = xb.fit)) +
+  geom_point(aes(y = std.devres), size = 2) +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"), 
+             linewidth = 1) +
+  expand_limits(y = c(-4.5, 7.5)) +
+  labs(y = "std dev.res", x = "xb",
+       title = "Betaplasma - Full Model: Negbin model (Std Dev Residuals)")
+
+# Plot using standardized Pearson residuals
+ggplot(fullmodel_pred, aes(x = xb.fit)) +
+  geom_point(aes(y = std.pearsonres), size = 2) +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"), 
+             linewidth = 1) +
+  expand_limits(y = c(-4.5, 7.5)) +
+  labs(y = "std Pearson res.", x = "xb",
+       title = "Betaplasma - Full model: Negbin model (Std Pearson Residuals)")
+
+
 pred_bmi <- ggeffects::ggpredict(fullmodel, terms = "bmi [all]")
 plot(pred_bmi)
 
@@ -94,8 +177,8 @@ ggplot(data, aes(x = bmi, y = betaplasma, color = vituse)) +
 
 
 #Selection
-Fullscope_Model <- glm.nb(betaplasma ~ (bmi + age + fat + cholesterol + fiber + 
-                                        alcohol + betadiet + smokstat + sex + vituse)^2,data = data, control = glm.control(maxit=10000))
+Fullscope_Model1 <- glm.nb(betaplasma ~ (bmi + age + fat + cholesterol + fiber + 
+                                        alcohol + betadiet + smokstat + sex + vituse)^2,data = data, control = glm.control(maxit=1000))
 Fullscope_Model <- glm.nb(betaplasma ~ bmi + age + fat + cholesterol + fiber + 
                                           alcohol + betadiet + smokstat + sex + vituse,data = data, control = glm.control(maxit=1000))
 summary(Fullscope_Model)
@@ -111,7 +194,7 @@ nullmodel <- glm.nb(betaplasma ~ 1, data = data)
 
 n <- nrow(data)  # sample size
 forward_model <- step(nullmodel,
-                  scope = list(lower = ~1, upper = formula(Fullscope_Model)),
+                  scope = list(lower = ~1, upper = formula(Fullscope_Model1)),
                   direction = "forward",
                   trace = TRUE,
                   k = log(n))  # BIC instead of AIC
@@ -123,7 +206,7 @@ backward_model <- step(Fullscope_Model,
                        k = log(n))  # BIC
 
 stepwise_model_n <- step(nullmodel,
-                       scope = list(lower = ~1, upper = formula(Fullscope_Model)),
+                       scope = list(lower = ~1, upper = formula(Fullscope_Model1)),
                        direction = "both",
                        trace = TRUE,
                        k = log(n))  # BIC
@@ -202,26 +285,29 @@ anova(betaplasma_glmnb_bmi,model_reduced)
 
 #AIC, BIC, pseudo R2
 
-data.frame(AIC(nullmodel, model_reduced, forward_model), 
-           BIC(nullmodel, model_reduced, forward_model),
-           D = c(nullmodel$deviance, model_reduced$deviance, forward_model$deviance),
-           D0 = c(nullmodel$null.deviance, model_reduced$null.deviance, forward_model$null.deviance),
+
+data.frame(AIC(nullmodel, model_reduced, forward_model,fullmodel), 
+           BIC(nullmodel, model_reduced, forward_model,fullmodel),
+           D = c(nullmodel$deviance, model_reduced$deviance, forward_model$deviance,fullmodel$deviance),
+           D0 = c(nullmodel$null.deviance, model_reduced$null.deviance, forward_model$null.deviance,fullmodel$null.deviance),
            p = c(nullmodel$df.null - nullmodel$df.residual,
                  model_reduced$df.null - model_reduced$df.residual,
-                 forward_model$df.null - forward_model$df.residual)) |> 
+                 forward_model$df.null - forward_model$df.residual,
+                 fullmodel$df.null - fullmodel$df.residual)) |> 
   mutate(df.1 = NULL) -> collect.AICetc
 collect.AICetc
 
 
 collect.AICetc <- data.frame(
-  AIC(nullmodel, model_reduced, forward_model, betaplasma_glmnb_bmi), 
-  BIC(nullmodel, model_reduced, forward_model, betaplasma_glmnb_bmi),
-  D = c(nullmodel$deviance, model_reduced$deviance, forward_model$deviance, betaplasma_glmnb_bmi$deviance),
-  D0 = c(nullmodel$null.deviance, model_reduced$null.deviance, forward_model$null.deviance, betaplasma_glmnb_bmi$null.deviance),
+  AIC(nullmodel, model_reduced, forward_model, betaplasma_glmnb_bmi,fullmodel), 
+  BIC(nullmodel, model_reduced, forward_model, betaplasma_glmnb_bmi,fullmodel),
+  D = c(nullmodel$deviance, model_reduced$deviance, forward_model$deviance, betaplasma_glmnb_bmi$deviance,fullmodel$deviance),
+  D0 = c(nullmodel$null.deviance, model_reduced$null.deviance, forward_model$null.deviance, betaplasma_glmnb_bmi$null.deviance,fullmodel$null.deviance),
   p = c(nullmodel$df.null - nullmodel$df.residual,
         model_reduced$df.null - model_reduced$df.residual,
         forward_model$df.null - forward_model$df.residual,
-        betaplasma_glmnb_bmi$df.null - betaplasma_glmnb_bmi$df.residual)
+        betaplasma_glmnb_bmi$df.null - betaplasma_glmnb_bmi$df.residual,
+        fullmodel$df.null - fullmodel$df.residual)
 )
 
 collect.AICetc
@@ -251,6 +337,38 @@ betaplasma_pred |> mutate(
   std.devres = devres/sqrt(1 - v)) ->
   betaplasma_pred
 
+pearson_res <- residuals(model_reduced, type = "pearson")
+
+# Add residuals and standardized residuals to dataframe
+betaplasma_pred <- betaplasma_pred |> mutate(
+  v = v,
+  devres = devres,
+  std.devres = devres / sqrt(1 - v),
+  pearsonres = pearson_res,
+  std.pearsonres = pearson_res / sqrt(1 - v)
+)
+
+ggplot(betaplasma_pred, aes(x = xb.fit)) +
+  geom_point(aes(y = std.devres), size = 2) +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"), 
+             linewidth = 1) +
+  expand_limits(y = c(-4.5, 7.5)) +
+  labs(y = "std dev.res", x = "xb",
+       title = "Betaplasma - Final: Negbin model (Std Dev Residuals)")
+
+# Plot using standardized Pearson residuals
+ggplot(betaplasma_pred, aes(x = xb.fit)) +
+  geom_point(aes(y = std.pearsonres), size = 2) +
+  geom_hline(yintercept = c(-3, -2, 0, 2, 3), 
+             linetype = c("dotted", "dashed", "solid", "dashed", "dotted"), 
+             linewidth = 1) +
+  expand_limits(y = c(-4.5, 7.5)) +
+  labs(y = "std Pearson res.", x = "xb",
+       title = "Betaplasma - Final: Negbin model (Std Pearson Residuals)")
+
+
+
 betaplasma_pois_glm <- glm(betaplasma ~ bmi + cholesterol + betadiet + vituse_reduced, family = "poisson", data = new_data)
 betaplasma_pois_infl <- influence(betaplasma_pois_glm)
 
@@ -273,7 +391,7 @@ ggplot(betaplasma_pred, aes(x = xb_pois)) +
              linewidth = 1) +
   expand_limits(y = c(-22.5, 49)) +
   labs(y = "std dev.res", x = "xb",
-       title = "Betaplasma: Poisson model")
+       title = "Betaplasma: Poisson model (Std. Dev residuals")
 
 ggplot(betaplasma_pred, aes(x = xb.fit)) +
   geom_point(aes(y = std.devres), size = 2) +
@@ -349,4 +467,142 @@ new_data$mu.lwr <- model_reduced$family$linkinv(link$fit - critval * link$se.fit
 new_data$mu.upr <- model_reduced$family$linkinv(link$fit + critval * link$se.fit)
 
 
+cooks_d <- cooks.distance(model_reduced)
 
+# Plot Cook's distance
+plot(cooks_d, 
+     type = "h", 
+     main = "Cook's Distance", 
+     ylab = "Cook's Distance", 
+     xlab = "Observation", 
+     col = "blue", 
+     lwd = 2)
+
+# Add a reference line for identifying influential observations
+abline(h = 4 / length(cooks_d), col = "red", lty = 2)
+
+# Optionally label points above the threshold
+threshold <- 4 / length(cooks_d)
+influential <- which(cooks_d > threshold)
+text(influential, cooks_d[influential], labels = influential, pos = 3, cex = 0.8)
+
+
+library(dplyr)
+library(ggplot2)
+
+# Calculate dynamic threshold
+n <- nobs(model_reduced)            # Number of observations
+p <- length(coef(model_reduced))   # Number of parameters (incl. intercept)
+leverage_threshold <- 2 * p / n    # You can also try 3*p/n for a stricter cutoff
+
+# Prepare data for plotting
+diagnostics_df <- data %>%
+  mutate(
+    fitted = fitted(model_reduced),
+    Dcook = cooks.distance(model_reduced),
+    leverage = hatvalues(model_reduced),
+    std_resid = rstandard(model_reduced),
+    high_resid = abs(std_resid) > 2,
+    high_leverage = leverage > leverage_threshold
+  )
+
+# Plot: Cook's Distance vs Fitted Values
+ggplot(diagnostics_df, aes(x = fitted, y = Dcook)) +
+  geom_point(aes(color = factor(high_leverage))) +
+  geom_point(data = filter(diagnostics_df, high_leverage),
+             aes(x = fitted, y = Dcook, color = "High leverage"),
+             size = 3) +
+  geom_point(data = filter(diagnostics_df, high_resid),
+             aes(x = fitted, y = Dcook, color = "High residuals"),
+             size = 3, shape = 21, fill = "orange", stroke = 1.2) +
+  geom_hline(yintercept = 4 / n, linewidth = 1, linetype = "dashed") +
+  labs(
+    title = "Cook's Distance vs Fitted Values",
+    subtitle = paste("High leverage threshold:", round(leverage_threshold, 4), 
+                     " | Dashed line: Cook's D > 4/n"),
+    x = "Fitted values", y = "Cook's Distance", color = "Highlight"
+  ) +
+  scale_color_manual(values = c("TRUE" = "green", 
+                                "High leverage" = "green", 
+                                "High residuals" = "orange")) +
+  theme(legend.position = "top")
+
+
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+# Calculate dynamic threshold
+n <- nobs(model_reduced)            # Number of observations
+p <- length(coef(model_reduced))   # Number of parameters (incl. intercept)
+leverage_threshold <- 2 * p / n    # You can also try 3*p/n for a stricter cutoff
+
+# Prepare data for plotting
+diagnostics_df <- data %>%
+  mutate(
+    fitted = fitted(model_reduced),
+    Dcook = cooks.distance(model_reduced),
+    leverage = hatvalues(model_reduced),
+    std_resid = rstandard(model_reduced),
+    high_resid = abs(std_resid) > 2,
+    high_leverage = leverage > leverage_threshold
+  )
+
+# Plot: Cook's Distance vs Fitted Values
+ggplot(diagnostics_df, aes(x = fitted, y = Dcook)) +
+  geom_point(aes(color = factor(high_leverage))) +
+  geom_point(data = filter(diagnostics_df, high_leverage),
+             aes(x = fitted, y = Dcook, color = "High leverage"),
+             size = 3) +
+  geom_point(data = filter(diagnostics_df, high_resid),
+             aes(x = fitted, y = Dcook, color = "High residuals"),
+             size = 3, shape = 21, fill = "orange", stroke = 1.2) +
+  geom_hline(yintercept = 4 / n, linewidth = 1, linetype = "dashed") +
+  labs(
+    title = "Cook's Distance vs Fitted Values",
+    subtitle = paste("High leverage threshold:", round(leverage_threshold, 4), 
+                     " | Dashed line: Cook's D > 4/n"),
+    x = "Fitted values", y = "Cook's Distance", color = "Highlight"
+  ) +
+  scale_color_manual(values = c("TRUE" = "green", 
+                                "High leverage" = "green", 
+                                "High residuals" = "orange")) +
+  theme(legend.position = "top")
+
+
+
+library(ggplot2)
+library(MASS)
+library(dplyr)
+
+# Assuming model_reduced is your fitted glm.nb model
+n <- nobs(model_reduced)
+
+# Create a data frame with diagnostics
+influence_data <- data.frame(
+  leverage = hatvalues(model_reduced),
+  fitted = fitted(model_reduced),
+  cooksD = cooks.distance(model_reduced)
+)
+
+# Optional: add row numbers for labeling influential points
+influence_data$obs <- seq_len(n)
+
+# Define a dynamic threshold for high leverage
+p <- length(coef(model_reduced))  # number of parameters
+high_leverage_threshold <- 2 * p / n
+
+# Plot: Fitted Values vs Leverage with bubble size for Cook's distance
+ggplot(influence_data, aes(x = fitted, y = leverage)) +
+  geom_point(aes(size = cooksD), alpha = 0.6) +
+  geom_hline(yintercept = high_leverage_threshold, linetype = "dashed", color = "darkgrey") +
+  scale_size_continuous(name = "Cook's Distance", range = c(1, 6)) +
+  labs(title = "Fitted Values vs Leverage",
+       subtitle = paste0("Dashed line: high leverage threshold (", round(high_leverage_threshold, 3), ")"),
+       x = "Fitted Values",
+       y = "Leverage") +
+  theme_minimal()
